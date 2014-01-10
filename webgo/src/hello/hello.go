@@ -1,28 +1,27 @@
 package main
 
 import (
-    "github.com/hoisie/web";
-    "encoding/json";
-    "runtime";
-    "os";
-    "log";
+	"encoding/json"
+	"github.com/hoisie/web"
+	"io/ioutil"
+	"log"
+	"runtime"
 )
 
 type MessageStruct struct {
-    Message string
+	Message string `json:"message"`
 }
 
 func hello(val string) string {
-  m := MessageStruct{"Hello, world"}
-  j, _ := json.Marshal(m)
-  return string(j)
+	m := MessageStruct{"Hello, World!"}
+	j, _ := json.Marshal(m)
+	return string(j)
 }
 
 func main() {
-    f, _ := os.Create("server.log")
-    logger := log.New(f, "", log.Ldate|log.Ltime)
-    runtime.GOMAXPROCS(runtime.NumCPU())
-    web.Get("/(.*)", hello)
-    web.SetLogger(logger)
-    web.Run("0.0.0.0:8080")
+	logger := log.New(ioutil.Discard, "", 0)
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	web.Get("/(.*)", hello)
+	web.SetLogger(logger)
+	web.Run("0.0.0.0:8080")
 }

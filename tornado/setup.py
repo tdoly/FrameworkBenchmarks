@@ -1,50 +1,30 @@
+from os.path import expanduser
+from os import kill
 import subprocess
 import sys
-import setup_util
-import os
-from os.path import expanduser
-
-home = expanduser("~")
-cwd = "%s/FrameworkBenchmarks/tornado" % home
+import time
 
 
-def start(args):
-    setup_util.replace_text(
-        cwd + "/server.py", "127.0.0.1", args.database_host)
+python = expanduser('~/FrameworkBenchmarks/installs/py2/bin/python')
+cwd = expanduser('~/FrameworkBenchmarks/tornado')
 
-    subprocess.check_call("sudo pip install -r requirements.txt", cwd=cwd, shell=True)
 
-    subprocess.Popen("python %s/FrameworkBenchmarks/tornado/server.py --port=8000 --logging=error" % home, shell=True, cwd=cwd)
-    subprocess.Popen("python %s/FrameworkBenchmarks/tornado/server.py --port=8001 --logging=error" % home, shell=True, cwd=cwd)
-    subprocess.Popen("python %s/FrameworkBenchmarks/tornado/server.py --port=8002 --logging=error" % home, shell=True, cwd=cwd)
-    subprocess.Popen("python %s/FrameworkBenchmarks/tornado/server.py --port=8003 --logging=error" % home, shell=True, cwd=cwd)
-    subprocess.Popen("python %s/FrameworkBenchmarks/tornado/server.py --port=8004 --logging=error" % home, shell=True, cwd=cwd)
-    subprocess.Popen("python %s/FrameworkBenchmarks/tornado/server.py --port=8005 --logging=error" % home, shell=True, cwd=cwd)
-    subprocess.Popen("python %s/FrameworkBenchmarks/tornado/server.py --port=8006 --logging=error" % home, shell=True, cwd=cwd)
-    subprocess.Popen("python %s/FrameworkBenchmarks/tornado/server.py --port=8007 --logging=error" % home, shell=True, cwd=cwd)
-    subprocess.check_call("sudo /usr/local/nginx/sbin/nginx -c " + home + "/FrameworkBenchmarks/tornado/deploy/nginx.conf", shell=True)
-
+def start(args, logfile, errfile):
+    subprocess.Popen(
+        python + " server.py --port=8080 --mongo=%s --logging=error" % (args.database_host,),
+        shell=True, cwd=cwd, stderr=errfile, stdout=logfile)
     return 0
 
-
-def stop():
-
-    try:
-
-        subprocess.call("sudo /usr/local/nginx/sbin/nginx -s stop", shell=True)
-
-    except subprocess.CalledProcessError:
-        #TODO: Better handle exception.
-        pass
-
-    p = subprocess.Popen(['ps', 'aux'], stdout=subprocess.PIPE)
-    out, err = p.communicate()
-    for line in out.splitlines():
-        if 'server.py' in line:
-            #try:
-            pid = int(line.split(None, 2)[1])
-            os.kill(pid, 9)
-            #except OSError:
-            #    pass
-
+def stop(logfile, errfile):
+    for line in subprocess.check_output(["ps", "aux"]).splitlines():
+        if 'server.py --port=8080' in line:
+            pid = int(line.split(None,2)[1])
+            kill(pid, 9)
     return 0
+
+if __name__ == '__main__':
+    class DummyArg:
+        database_host = 'localhost'
+    start(DummyArg(), sys.stderr, sys.stderr)
+    time.sleep(1)
+    stop(sys.stderr, sys.stderr)

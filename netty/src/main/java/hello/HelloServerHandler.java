@@ -1,161 +1,123 @@
 package hello;
 
-import io.netty.buffer.MessageBuf;
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelFutureListener;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.ChannelInboundMessageHandlerAdapter;
-import io.netty.handler.codec.DecoderResult;
-import io.netty.handler.codec.http.Cookie;
-import io.netty.handler.codec.http.CookieDecoder;
-import io.netty.handler.codec.http.DefaultFullHttpResponse;
-import io.netty.handler.codec.http.DefaultHttpResponse;
-import io.netty.handler.codec.http.FullHttpResponse;
-import io.netty.handler.codec.http.HttpContent;
-import io.netty.handler.codec.http.HttpHeaders;
-import io.netty.handler.codec.http.HttpObject;
-import io.netty.handler.codec.http.HttpRequest;
-import io.netty.handler.codec.http.HttpResponse;
-import io.netty.handler.codec.http.LastHttpContent;
-import io.netty.handler.codec.http.ServerCookieEncoder;
-import io.netty.util.CharsetUtil;
 
-import java.util.Map;
-import java.util.HashMap;
-import java.util.Set;
-
-import java.io.*;
+import java.text.SimpleDateFormat;
+import java.util.*;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 import com.fasterxml.jackson.databind.*;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.handler.codec.http.DefaultFullHttpResponse;
+import io.netty.handler.codec.http.FullHttpResponse;
+import io.netty.handler.codec.http.HttpHeaders;
+import io.netty.handler.codec.http.HttpRequest;
+import io.netty.handler.codec.http.HttpResponseStatus;
+import io.netty.handler.codec.http.HttpVersion;
+import io.netty.util.CharsetUtil;
 
-import static io.netty.handler.codec.http.HttpHeaders.Names.*;
-import static io.netty.handler.codec.http.HttpHeaders.*;
-import static io.netty.handler.codec.http.HttpResponseStatus.*;
-import static io.netty.handler.codec.http.HttpVersion.*;
 
-public class HelloServerHandler extends ChannelInboundMessageHandlerAdapter<Object> {
+public class HelloServerHandler extends SimpleChannelInboundHandler<Object> {
+    private final SimpleDateFormat format = new SimpleDateFormat("E, dd MMM yyyy HH:mm:ss z");
+    private CharSequence date;
 
-    private HttpRequest request;
-    /** Buffer that stores the response content */
-    private final StringBuilder buf = new StringBuilder();
-    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+    private final ByteBuf buffer = Unpooled.directBuffer().writeBytes("Hello, World!".getBytes(CharsetUtil.UTF_8));
+    private final CharSequence contentLength = HttpHeaders.newEntity(String.valueOf(buffer.readableBytes()));
 
-    private boolean flush;
+    private static final CharSequence TYPE_PLAIN = HttpHeaders.newEntity("text/plain; charset=UTF-8");
+    private static final CharSequence TYPE_JSON = HttpHeaders.newEntity("application/json; charset=UTF-8");
+
+    private static final CharSequence SERVER_NAME = HttpHeaders.newEntity("Netty");
+    private static final CharSequence CONTENT_TYPE_ENTITY = HttpHeaders.newEntity(HttpHeaders.Names.CONTENT_TYPE);
+    private static final CharSequence DATE_ENTITY = HttpHeaders.newEntity(HttpHeaders.Names.DATE);
+    private static final CharSequence CONTENT_LENGTH_ENTITY = HttpHeaders.newEntity(HttpHeaders.Names.CONTENT_LENGTH);
+    private static final CharSequence SERVER_ENTITY = HttpHeaders.newEntity(HttpHeaders.Names.SERVER);
 
     @Override
-    public boolean beginMessageReceived(ChannelHandlerContext ctx) throws Exception {
-        flush = false;
-        return super.beginMessageReceived(ctx);
-    }
-
-    @Override
-    public void messageReceived(ChannelHandlerContext ctx, Object msg) throws Exception {
-        MessageBuf<Object> out = ctx.nextOutboundMessageBuffer();
+    public void channelRead0(ChannelHandlerContext ctx, Object msg) throws Exception {
         if (msg instanceof HttpRequest) {
-            HttpRequest request = this.request = (HttpRequest) msg;
-
-            if (is100ContinueExpected(request)) {
-                send100Continue(out);
+            HttpRequest request = (HttpRequest) msg;
+            String uri = request.getUri();
+            switch (uri) {
+                case "/plaintext":
+                    writeResponse(ctx, request, buffer.duplicate().retain(), TYPE_PLAIN, contentLength);
+                    return;
+                case "/json":
+                    byte[] json = MAPPER.writeValueAsBytes(Collections.singletonMap("message", "Hello, World!"));
+                    writeResponse(ctx, request, ctx.alloc().buffer(json.length).writeBytes(json), TYPE_JSON,
+                            String.valueOf(json.length));
+                    return;
             }
-            
-            Map<String, String> data = new HashMap<String, String>();
-            data.put("message", "Hello, world");
-            
-            buf.setLength(0);
-            try
-            {
-              buf.append(HelloServerHandler.mapper.writeValueAsString(data));
-            }
-            catch (IOException ex)
-            {
-              // do nothing
-            }
-
-            appendDecoderResult(buf, request);
-        }
-
-        if (msg instanceof HttpContent) {
-            if (msg instanceof LastHttpContent) {
-              LastHttpContent trailer = (LastHttpContent) msg;
-              writeResponse(ctx, out, trailer);
-            }
+            FullHttpResponse response = new DefaultFullHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.NOT_FOUND, Unpooled.EMPTY_BUFFER, false);
+            ctx.write(response).addListener(ChannelFutureListener.CLOSE);
         }
     }
 
-    private static void appendDecoderResult(StringBuilder buf, HttpObject o) {
-        DecoderResult result = o.getDecoderResult();
-        if (result.isSuccess()) {
-            return;
-        }
-
-        buf.append(".. WITH DECODER FAILURE: ");
-        buf.append(result.cause());
-        buf.append("\r\n");
-    }
-
-    private void writeResponse(ChannelHandlerContext ctx, MessageBuf<Object> out, HttpObject currentObj) {
+    private void writeResponse(ChannelHandlerContext ctx, HttpRequest request, ByteBuf buf,
+                               CharSequence contentType, CharSequence contentLength) {
         // Decide whether to close the connection or not.
-        boolean keepAlive = isKeepAlive(request);
+        boolean keepAlive = HttpHeaders.isKeepAlive(request);
         // Build the response object.
         FullHttpResponse response = new DefaultFullHttpResponse(
-                HTTP_1_1, currentObj.getDecoderResult().isSuccess()? OK : BAD_REQUEST,
-                Unpooled.copiedBuffer(buf.toString(), CharsetUtil.UTF_8));
-
-        response.headers().set(CONTENT_TYPE, "text/plain; charset=UTF-8");
+                HttpVersion.HTTP_1_1, HttpResponseStatus.OK, buf, false);
+        HttpHeaders headers = response.headers();
+        headers.set(CONTENT_TYPE_ENTITY, contentType);
+        headers.set(SERVER_ENTITY, SERVER_NAME);
+        headers.set(DATE_ENTITY, date);
 
         if (keepAlive) {
-            // Add 'Content-Length' header only for a keep-alive connection.
-            response.headers().set(CONTENT_LENGTH, response.data().readableBytes());
-            // Add keep alive header as per:
-            // - http://www.w3.org/Protocols/HTTP/1.1/draft-ietf-http-v11-spec-01.html#Connection
-            response.headers().set(CONNECTION, HttpHeaders.Values.KEEP_ALIVE);
+            headers.set(CONTENT_LENGTH_ENTITY, contentLength);
         }
-
-        // Encode the cookie.
-        String cookieString = request.headers().get(COOKIE);
-        if (cookieString != null) {
-            Set<Cookie> cookies = CookieDecoder.decode(cookieString);
-            if (!cookies.isEmpty()) {
-                // Reset the cookies if necessary.
-                for (Cookie cookie: cookies) {
-                    response.headers().add(SET_COOKIE, ServerCookieEncoder.encode(cookie));
-                }
-            }
-        } else {
-            // Browser sent no cookie. Add some.
-            response.headers().add(SET_COOKIE, ServerCookieEncoder.encode("key1", "value1"));
-            response.headers().add(SET_COOKIE, ServerCookieEncoder.encode("key2", "value2"));
-        }
-
-        // Write the response.
-        out.add(response);
 
         // Close the non-keep-alive connection after the write operation is done.
         if (!keepAlive) {
-            flush = false;
-            ctx.flush().addListener(ChannelFutureListener.CLOSE);
+            ctx.write(response).addListener(ChannelFutureListener.CLOSE);
         } else {
-            flush = true;
-        }
-    }
-
-    private void send100Continue(MessageBuf<Object> out) {
-        HttpResponse response = new DefaultHttpResponse(HTTP_1_1, CONTINUE);
-        out.add(response);
-        flush = true;
-    }
-
-    @Override
-    public void endMessageReceived(ChannelHandlerContext ctx) throws Exception {
-        if (flush) {
-            ctx.flush();
+            ctx.write(response, ctx.voidPromise());
         }
     }
 
     @Override
     public void exceptionCaught(
             ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        cause.printStackTrace();
         ctx.close();
+    }
+
+    @Override
+    public void channelReadComplete(ChannelHandlerContext ctx) throws Exception {
+        ctx.flush();
+    }
+
+    @Override
+    public void handlerRemoved(ChannelHandlerContext ctx) throws Exception {
+        super.handlerRemoved(ctx);
+        buffer.release();
+    }
+
+    @Override
+    public void channelActive(ChannelHandlerContext ctx) throws Exception {
+        date = HttpHeaders.newEntity(format.format(new Date()));
+
+        Channel channel = ctx.channel();
+        final ScheduledFuture<?> future = channel.eventLoop().scheduleWithFixedDelay(new Runnable() {
+            @Override
+            public void run() {
+                date = HttpHeaders.newEntity(format.format(new Date()));
+            }
+        }, 1000, 1000, TimeUnit.MILLISECONDS);
+
+        channel.closeFuture().addListener(new ChannelFutureListener() {
+            @Override
+            public void operationComplete(ChannelFuture channelFuture) throws Exception {
+                future.cancel(false);
+            }
+        });
     }
 }

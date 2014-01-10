@@ -1,5 +1,7 @@
 # Django settings for hello project.
 
+import os
+
 DEBUG = False
 TEMPLATE_DEBUG = DEBUG
 
@@ -11,13 +13,13 @@ MANAGERS = ADMINS
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django_psycopg2_pool.gevent', # Add 'postgresql_psycopg2', 'mysql', 'sqlite3' or 'oracle'.
-        'NAME': 'hello_world',                      # Or path to database file if using sqlite3.
-        'USER': 'benchmarkdbuser',                      # Not used with sqlite3.
-        'PASSWORD': 'benchmarkdbpass',                  # Not used with sqlite3.
+        'ENGINE': 'django.db.backends.' + os.environ['DJANGO_DB'], # Add 'postgresql_psycopg2', 'mysql', 'sqlite3' or 'oracle'.
+        'NAME': 'hello_world',           # Or path to database file if using sqlite3.
+        'USER': 'benchmarkdbuser',       # Not used with sqlite3.
+        'PASSWORD': 'benchmarkdbpass',   # Not used with sqlite3.
         'HOST': '',                      # Set to empty string for localhost. Not used with sqlite3.
         'PORT': '',                      # Set to empty string for default. Not used with sqlite3.
-	'POOL_SIZE' : 32,
+        'CONN_MAX_AGE': 30,
     }
 }
 
@@ -38,14 +40,14 @@ SITE_ID = 1
 
 # If you set this to False, Django will make some optimizations so as not
 # to load the internationalization machinery.
-USE_I18N = True
+USE_I18N = False
 
 # If you set this to False, Django will not format dates, numbers and
 # calendars according to the current locale.
-USE_L10N = True
+USE_L10N = False
 
 # If you set this to False, Django will not use timezone-aware datetimes.
-USE_TZ = True
+USE_TZ = False
 
 # Absolute filesystem path to the directory that will hold user-uploaded files.
 # Example: "/home/media/media.lawrence.com/media/"
@@ -86,8 +88,10 @@ SECRET_KEY = '_7mb6#v4yf@qhc(r(zbyh&amp;z_iby-na*7wz&amp;-v6pohsul-d#y5f'
 
 # List of callables that know how to import templates from various sources.
 TEMPLATE_LOADERS = (
-    'django.template.loaders.filesystem.Loader',
-    'django.template.loaders.app_directories.Loader',
+    ('django.template.loaders.cached.Loader', (
+        'django.template.loaders.filesystem.Loader',
+        'django.template.loaders.app_directories.Loader',
+    )),
 )
 
 MIDDLEWARE_CLASSES = (
@@ -107,7 +111,7 @@ TEMPLATE_DIRS = (
     # Put strings here, like "/home/html/django_templates" or "C:/www/django/templates".
     # Always use forward slashes, even on Windows.
     # Don't forget to use absolute paths, not relative paths.
-    "/home/ubuntu/FrameworkBenchmarks/django/hello/templates",
+    os.path.expanduser("~/FrameworkBenchmarks/django/hello/templates"),
 )
 
 INSTALLED_APPS = (
@@ -165,3 +169,5 @@ LOGGING = {
         },
     }
 }
+
+ALLOWED_HOSTS = ['*']

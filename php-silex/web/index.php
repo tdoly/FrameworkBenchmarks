@@ -9,18 +9,18 @@ require_once __DIR__.'/../vendor/autoload.php';
 
 $app = new Silex\Application();
 
+$dbh = new PDO('mysql:host=192.168.100.102;dbname=hello_world', 'benchmarkdbuser', 'benchmarkdbpass', array(
+    PDO::ATTR_PERSISTENT => true
+));
+
 $app->register(new Silex\Provider\DoctrineServiceProvider(), array(
     'db.options' => array(
-        'driver' => 'pdo_mysql',
-        'host' => '192.168.100.102',
-        'dbname' => 'hello_world',
-        'user' => 'benchmarkdbuser',
-        'password' => 'benchmarkdbpass',
+    'pdo' => $dbh
     ),
 ));
 
 $app->get('/json', function() {
-    return new JsonResponse(array("message" => "Hello World!"));
+    return new JsonResponse(array("message" => "Hello, World!"));
 });
 
 $app->get('/db', function(Request $request) use ($app) {
@@ -32,12 +32,15 @@ $app->get('/db', function(Request $request) use ($app) {
         $worlds[] = $app['db']->fetchAssoc('SELECT * FROM World WHERE id = ?', array(mt_rand(1, 10000)));
     }
 
+    if (count($worlds) == 1) {
+        $worlds = $worlds[0];
+    }
+
     return new JsonResponse($worlds);
 });
 
 
 $app->run();
-
 
 
 
